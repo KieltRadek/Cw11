@@ -7,12 +7,12 @@ namespace Cwiczenie11.Models;
 
 public class Doctor
 {
-    [Key]
-    public int idDoctor { get; set; }
-    [MaxLength(100)]
+    public int IdDoctor { get; set; }
     public string FirstName { get; set; }
-    [MaxLength(100)]
     public string LastName { get; set; }
-    [MaxLength(100)]
     public string Email { get; set; }
+    public DateTime Birthdate { get; set; }
+
+    public ICollection<Prescription> Prescriptions { get; set; }
+        = new List<Prescription>();
 }
