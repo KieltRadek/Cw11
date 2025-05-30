@@ -1,49 +1,53 @@
 using Cwiczenie11.Data;
 using Cwiczenie11.Models;
-using Cwiczenie11.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace Cwiczenie11.Data
 {
     public class PharmacyContext : DbContext
     {
-        public PharmacyContext(DbContextOptions<PharmacyContext> options)
-            : base(options)
-        {
-        }
+        public PharmacyContext(DbContextOptions<PharmacyContext> opts)
+            : base(opts) { }
 
-        public DbSet<Patient> Patients => Set<Patient>();
-        public DbSet<Doctor> Doctors => Set<Doctor>();
-        public DbSet<Medicament> Medicaments => Set<Medicament>();
-        public DbSet<Prescription> Prescriptions => Set<Prescription>();
-        public DbSet<PrescriptionMedicament> PrescriptionMedicaments => Set<PrescriptionMedicament>();
+        public DbSet<Patient> Patients { get; set; }
+        public DbSet<Doctor>  Doctors  { get; set; }
+        public DbSet<Medicament> Medicaments { get; set; }
+        public DbSet<Prescription> Prescriptions { get; set; }
+        public DbSet<PrescriptionMedicament> PrescriptionMedicaments { get; set; }
 
-        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        protected override void OnModelCreating(ModelBuilder mb)
         {
-            modelBuilder.Entity<PrescriptionMedicament>()
+            mb.Entity<Patient>().HasKey(p => p.IdPatient);
+            mb.Entity<Doctor>().HasKey(d => d.IdDoctor);
+            mb.Entity<Medicament>().HasKey(m => m.IdMedicament);
+            mb.Entity<Prescription>().HasKey(p => p.IdPrescription);
+
+            mb.Entity<PrescriptionMedicament>()
                 .HasKey(pm => new { pm.IdPrescription, pm.IdMedicament });
 
-            modelBuilder.Entity<PrescriptionMedicament>()
+            mb.Entity<Prescription>()
+                .HasOne(p => p.Patient)
+                .WithMany(p => p.Prescriptions)
+                .HasForeignKey(p => p.IdPatient);
+
+            mb.Entity<Prescription>()
+                .HasOne(p => p.Doctor)
+                .WithMany(d => d.Prescriptions)
+                .HasForeignKey(p => p.IdDoctor);
+
+            mb.Entity<PrescriptionMedicament>()
                 .HasOne(pm => pm.Prescription)
                 .WithMany(p => p.PrescriptionMedicaments)
                 .HasForeignKey(pm => pm.IdPrescription);
 
-            modelBuilder.Entity<PrescriptionMedicament>()
+            mb.Entity<PrescriptionMedicament>()
                 .HasOne(pm => pm.Medicament)
                 .WithMany(m => m.PrescriptionMedicaments)
                 .HasForeignKey(pm => pm.IdMedicament);
 
-            modelBuilder.Entity<Prescription>()
-                .HasOne(p => p.Patient)
-                .WithMany(p => p.Prescriptions)
-                .HasForeignKey(p => p.IdPatient)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            modelBuilder.Entity<Prescription>()
-                .HasOne(p => p.Doctor)
-                .WithMany(d => d.Prescriptions)
-                .HasForeignKey(p => p.IdDoctor)
-                .OnDelete(DeleteBehavior.Restrict);
+            mb.Entity<Patient>()
+                .HasIndex(p => p.Email)
+                .IsUnique();
         }
     }
 }

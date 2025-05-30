@@ -1,6 +1,6 @@
-@Cwiczenie11_HostAddress = http://localhost:5272
+@Cw11_HostAddress = http://localhost:5067
 
-GET {{Cwiczenie11_HostAddress}}/weatherforecast/
+GET {{Cw11_HostAddress}}/weatherforecast/
 Accept: application/json
 
 ###

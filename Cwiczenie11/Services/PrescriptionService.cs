@@ -1,116 +1,105 @@
+﻿using Cw11.DTOs;
+using Cw11.Interfaces;
 using Cwiczenie11.Data;
-using Cwiczenie11.DTOs;
 using Cwiczenie11.Models;
 using Microsoft.EntityFrameworkCore;
 
+namespace Cw11.Services;
 
-namespace Cwiczenie11.Services
-{
-    public class PrescriptionService : IPrescriptionService
+public class PrescriptionService : IPrescriptionService
     {
         private readonly PharmacyContext _ctx;
-        public PrescriptionService(PharmacyContext ctx) 
-            => _ctx = ctx;
+        public PrescriptionService(PharmacyContext ctx) => _ctx = ctx;
 
-        public async Task<int> CreateAsync(CreatePrescriptionDto dto)
+        public async Task<int> CreatePrescriptionAsync(NewPrescriptionDto dto)
         {
-            // 1) Walidacje wejścia
-            if (dto.Medicaments is null || !dto.Medicaments.Any())
-                throw new ArgumentException("Prescription must contain at least one medicament.");
-            
             if (dto.Medicaments.Count > 10)
-                throw new ArgumentException("No more than 10 medicaments allowed.");
-
+                throw new ArgumentException("Max 10 medicaments.");
             if (dto.DueDate < dto.Date)
-                throw new ArgumentException("DueDate must be >= Date.");
+                throw new ArgumentException("DueDate < Date.");
 
-            // 2) Sprawdź czy lekarz istnieje
-            var doctorExists = await _ctx.Doctors
-                .AsNoTracking()
-                .AnyAsync(d => d.IdDoctor == dto.DoctorId);
-            if (!doctorExists)
-                throw new ArgumentException($"Doctor with id {dto.DoctorId} not found.");
+            var doctor = await _ctx.Doctors.FindAsync(dto.IdDoctor)
+                  ?? throw new KeyNotFoundException($"Doctor {dto.IdDoctor} not found.");
 
-            // 3) Upsert pacjenta
-            Patient patient;
-            if (dto.Patient.IdPatient.HasValue)
+            // patient
+            Patient patient = null;
+            if (dto.Patient.IdPatient > 0)
+                patient = await _ctx.Patients.FindAsync(dto.Patient.IdPatient);
+            if (patient == null)
             {
-                patient = await _ctx.Patients
-                    .FirstOrDefaultAsync(p => p.IdPatient == dto.Patient.IdPatient.Value);
-
-                if (patient == null)
-                {
-                    patient = MapToNewPatient(dto.Patient);
-                    _ctx.Patients.Add(patient);
-                }
-                else
-                {
-                    UpdateExistingPatient(patient, dto.Patient);
-                }
-            }
-            else
-            {
-                patient = MapToNewPatient(dto.Patient);
+                patient = new Patient {
+                    FirstName = dto.Patient.FirstName,
+                    LastName  = dto.Patient.LastName,
+                    Email     = dto.Patient.Email,
+                    Birthdate = dto.Patient.Birthdate
+                };
                 _ctx.Patients.Add(patient);
             }
 
-            // 4) Walidacja istnienia leków
-            var medIds = dto.Medicaments
-                .Select(m => m.IdMedicament)
-                .Distinct()
-                .ToList();
+            // meds exist?
+            var ids = dto.Medicaments.Select(m => m.IdMedicament).ToList();
+            var meds = await _ctx.Medicaments.Where(m => ids.Contains(m.IdMedicament)).ToListAsync();
+            if (meds.Count != ids.Count)
+                throw new KeyNotFoundException("Some medicaments not found.");
 
-            var existingMedIds = await _ctx.Medicaments
-                .Where(m => medIds.Contains(m.IdMedicament))
-                .Select(m => m.IdMedicament)
-                .ToListAsync();
-
-            var missing = medIds.Except(existingMedIds).ToList();
-            if (missing.Any())
-                throw new ArgumentException($"Medicaments not found: {string.Join(", ", missing)}.");
-
-            // 5) Budowa encji recepty
-            var prescription = new Prescription
-            {
-                Date       = dto.Date,
-                DueDate    = dto.DueDate,
-                IdDoctor   = dto.DoctorId,
-                Patient    = patient
+            // create presc
+            var presc = new Prescription {
+                Date    = dto.Date,
+                DueDate = dto.DueDate,
+                Patient = patient,
+                Doctor  = doctor
             };
+            _ctx.Prescriptions.Add(presc);
 
-            foreach (var medDto in dto.Medicaments)
+            foreach (var m in dto.Medicaments)
             {
-                prescription.PrescriptionMedicaments.Add(new PrescriptionMedicament
-                {
-                    IdMedicament = medDto.IdMedicament,
-                    Dose         = medDto.Dose,
-                    Details      = medDto.Details
+                presc.PrescriptionMedicaments.Add(new PrescriptionMedicament {
+                    IdMedicament = m.IdMedicament,
+                    Dose         = m.Dose,
+                    Details      = m.Description
                 });
             }
 
-            // 6) Persist i zwrócenie klucza
-            _ctx.Prescriptions.Add(prescription);
             await _ctx.SaveChangesAsync();
-            return prescription.IdPrescription;
+            return presc.IdPrescription;
         }
 
-        // Pomocnicze
-        private static Patient MapToNewPatient(PatientDto dto)
-            => new Patient
-            {
-                FirstName = dto.FirstName,
-                LastName  = dto.LastName,
-                Email     = dto.Email,
-                Birthdate = dto.Birthdate
-            };
-
-        private static void UpdateExistingPatient(Patient patient, PatientDto dto)
+        public async Task<PatientDetailsDto> GetPatientDetailsAsync(int patientId)
         {
-            patient.FirstName = dto.FirstName;
-            patient.LastName  = dto.LastName;
-            patient.Email     = dto.Email;
-            patient.Birthdate = dto.Birthdate;
-            // EF Core sam śledzi zmiany
+            var p = await _ctx.Patients
+                .Include(x => x.Prescriptions)
+                  .ThenInclude(pr => pr.PrescriptionMedicaments)
+                    .ThenInclude(pm => pm.Medicament)
+                .Include(x => x.Prescriptions)
+                  .ThenInclude(pr => pr.Doctor)
+                .SingleOrDefaultAsync(x => x.IdPatient == patientId);
+
+            if (p == null)
+                throw new KeyNotFoundException($"Patient {patientId} not found.");
+
+            return new PatientDetailsDto {
+                IdPatient   = p.IdPatient,
+                FirstName   = p.FirstName,
+                LastName    = p.LastName,
+                Prescriptions = p.Prescriptions
+                  .OrderBy(pr => pr.DueDate)
+                  .Select(pr => new PrescriptionDetailDto {
+                    IdPrescription = pr.IdPrescription,
+                    Date           = pr.Date,
+                    DueDate        = pr.DueDate,
+                    Doctor = new DoctorDto {
+                      IdDoctor  = pr.Doctor.IdDoctor,
+                      FirstName = pr.Doctor.FirstName,
+                      LastName  = pr.Doctor.LastName
+                    },
+                    Medicaments = pr.PrescriptionMedicaments
+                      .Select(pm => new MedicamentDetailDto {
+                        IdMedicament = pm.IdMedicament,
+                        Name         = pm.Medicament.Name,
+                        Dose         = pm.Dose,
+                        Description  = pm.Details
+                      })
+                  })
+            };
         }
     }
-}
