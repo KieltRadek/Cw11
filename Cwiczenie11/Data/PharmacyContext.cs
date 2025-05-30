@@ -1,45 +1,49 @@
 using Cwiczenie11.Data;
+using Cwiczenie11.Models;
 using Cwiczenie11.Services;
 using Microsoft.EntityFrameworkCore;
 
-var builder = WebApplication.CreateBuilder(args);
-
-// 1. Dodajemy DbContext (ConnectionString w appsettings.json pod kluczem "Default")
-builder.Services.AddDbContext<PharmacyContext>(options =>
-    options.UseSqlServer(
-        builder.Configuration.GetConnectionString("Default")
-    )
-);
-
-// 2. Rejestracja serwisów
-builder.Services.AddScoped<IPrescriptionService, PrescriptionService>();
-builder.Services.AddScoped<IPatientService, PatientService>();
-
-// 3. Dodajemy obsługę kontrolerów
-builder.Services.AddControllers();
-
-// 4. Swagger / OpenAPI
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
-
-var app = builder.Build();
-
-// 5. Pipeline
-if (app.Environment.IsDevelopment())
+namespace Cwiczenie11.Data
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
+    public class PharmacyContext : DbContext
+    {
+        public PharmacyContext(DbContextOptions<PharmacyContext> options)
+            : base(options)
+        {
+        }
+
+        public DbSet<Patient> Patients => Set<Patient>();
+        public DbSet<Doctor> Doctors => Set<Doctor>();
+        public DbSet<Medicament> Medicaments => Set<Medicament>();
+        public DbSet<Prescription> Prescriptions => Set<Prescription>();
+        public DbSet<PrescriptionMedicament> PrescriptionMedicaments => Set<PrescriptionMedicament>();
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            modelBuilder.Entity<PrescriptionMedicament>()
+                .HasKey(pm => new { pm.IdPrescription, pm.IdMedicament });
+
+            modelBuilder.Entity<PrescriptionMedicament>()
+                .HasOne(pm => pm.Prescription)
+                .WithMany(p => p.PrescriptionMedicaments)
+                .HasForeignKey(pm => pm.IdPrescription);
+
+            modelBuilder.Entity<PrescriptionMedicament>()
+                .HasOne(pm => pm.Medicament)
+                .WithMany(m => m.PrescriptionMedicaments)
+                .HasForeignKey(pm => pm.IdMedicament);
+
+            modelBuilder.Entity<Prescription>()
+                .HasOne(p => p.Patient)
+                .WithMany(p => p.Prescriptions)
+                .HasForeignKey(p => p.IdPatient)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<Prescription>()
+                .HasOne(p => p.Doctor)
+                .WithMany(d => d.Prescriptions)
+                .HasForeignKey(p => p.IdDoctor)
+                .OnDelete(DeleteBehavior.Restrict);
+        }
+    }
 }
-
-app.UseHttpsRedirection();
-
-// jeśli w kontrolerach masz [Authorize]
-app.UseAuthorization();
-
-// 6. Mappujemy wszystkie kontrolery z atrybutem [ApiController]
-app.MapControllers();
-
-// (opcjonalnie) domyślny endpoint
-// app.MapGet("/weatherforecast", …);
-
-app.Run();

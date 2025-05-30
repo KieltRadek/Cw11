@@ -1,5 +1,6 @@
 using Cwiczenie11.DTOs;
 using Cwiczenie11.Data;
+using Microsoft.EntityFrameworkCore;
 
 
 namespace Cwiczenie11.Services;
